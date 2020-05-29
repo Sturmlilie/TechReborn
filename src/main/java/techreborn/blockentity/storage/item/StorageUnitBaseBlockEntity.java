@@ -27,13 +27,17 @@ package techreborn.blockentity.storage.item;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.Item;
+import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.text.LiteralText;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.registry.Registry;
 import net.minecraft.world.World;
 import reborncore.api.IListInfoProvider;
 import reborncore.api.IToolDrop;
@@ -54,10 +58,34 @@ import java.util.List;
 public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 	implements InventoryProvider, IToolDrop, IListInfoProvider, IContainerProvider {
 
+	private String logPref() {
+		if (this.world == null) {
+			return "[N] ";
+		}
+
+		if (this.world.isClient) {
+			return "[C] ";
+		} else {
+			return "[S] ";
+		}
+	}
+
+	private int objId(Object obj) {
+		if (obj == null) {
+			return 0;
+		} else {
+			return obj.hashCode();
+		}
+	}
 
 	// Inventory constants
 	private static final int INPUT_SLOT = 0;
 	private static final int OUTPUT_SLOT = 1;
+
+	// NBT keys
+	private static final String TAG_LOCKED_ITEM = "lockedItem";
+
+	private static final Item NULL_ITEM = Items.AIR;
 
 	protected RebornInventory<StorageUnitBaseBlockEntity> inventory;
 	private int maxCapacity;
@@ -67,6 +95,11 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 	private ItemStack storeItemStack;
 
 	private TRContent.StorageUnit type;
+
+	/** A locked storage unit will continue accepting items
+	 *  (eg. via right click) even when the item count drops to zero.
+	 */
+	private Item lockedItem = NULL_ITEM;
 
 	public StorageUnitBaseBlockEntity() {
 		super(TRBlockEntities.STORAGE_UNIT);
@@ -170,6 +203,16 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 		return storeItemStack.isEmpty() ? inventory.getInvStack(OUTPUT_SLOT) : storeItemStack;
 	}
 
+	// Returns the ItemStack to be displayed to the player via UI / model
+	public ItemStack getDisplayedStack() {
+		if (!getLocked()) {
+			return getStoredStack();
+		} else {
+			// Render the locked item even if the unit is empty
+			return new ItemStack(lockedItem);
+		}
+	}
+
 	public ItemStack getAll() {
 		ItemStack returnStack = ItemStack.EMPTY;
 
@@ -187,7 +230,7 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 
 	public ItemStack processInput(ItemStack inputStack) {
 
-		boolean isSameStack = isSameType(inputStack);
+		final boolean isSameStack = isSameType(inputStack);
 
 		if (storeItemStack == ItemStack.EMPTY && (isSameStack || getCurrentCapacity() == 0)) {
 			// Check if storage is empty, NOT including the output slot
@@ -222,6 +265,11 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 	}
 
 	public boolean isSameType(ItemStack inputStack) {
+		if (getLocked()) {
+			System.out.printf("+++ SUB#isSameType: locked: [%s]\n", lockedItem);
+			return inputStack.getItem() == lockedItem;
+		}
+
 		if (inputStack != ItemStack.EMPTY) {
 			return ItemUtils.isItemEqual(getStoredStack(), inputStack, true, true);
 		}
@@ -281,6 +329,12 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 			storeItemStack.setCount(Math.min(tagCompound.getInt("storedQuantity"), this.maxCapacity));
 		}
 
+		if (tagCompound.contains(TAG_LOCKED_ITEM)) {
+			final Identifier id = new Identifier(tagCompound.getString(TAG_LOCKED_ITEM));
+			lockedItem = Registry.ITEM.get(id);
+			System.out.printf(logPref()+"+++ locked tags: [%s/%s]\n",lockedItem.toString(),id.toString());
+		}
+
 		inventory.read(tagCompound);
 	}
 
@@ -300,6 +354,12 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 		} else {
 			tagCompound.putInt("storedQuantity", 0);
 		}
+
+		if (getLocked()) {
+			tagCompound.putString(TAG_LOCKED_ITEM, Registry.ITEM.getId(lockedItem).toString());
+			System.out.printf(logPref()+"+++ writing tags: [%s]\n",lockedItem.toString());
+		}
+
 		inventory.write(tagCompound);
 		return tagCompound;
 	}
@@ -377,9 +437,45 @@ public class StorageUnitBaseBlockEntity extends MachineBaseBlockEntity
 		// Inventory gets dropped automatically
 	}
 
+	// The int methods are only for ContainerBuilder.sync()
+	private int getLockedInt() {
+		return getLocked() ? 1 : 0;
+	}
+
+	private void setLockedInt(int lockedInt) {
+		setLocked(lockedInt == 1);
+	}
+
+	public void setLocked(boolean value) {
+		if (getLocked() == value) {
+			// Only set lockedItem in response to user input
+			return;
+		}
+
+		lockedItem = value ? getStoredStack().getItem() : NULL_ITEM;
+		if (value) {
+			System.out.printf(logPref()+"+++ locking to: %s\n",lockedItem.toString());
+		}
+	}
+
+	public boolean getLocked() {
+		return lockedItem != NULL_ITEM;
+	}
+
+	public boolean canModifyLocking() {
+		// Can always be unlocked
+		if (getLocked()) {
+			return true;
+		}
+
+		// Can only lock if there is an item to lock
+		return !isEmpty();
+	}
+
 	public BuiltContainer createContainer(int syncID, final PlayerEntity player) {
 		return new ContainerBuilder("chest").player(player.inventory).inventory().hotbar().addInventory()
-			.blockEntity(this).slot(0, 100, 53).outputSlot(1, 140, 53).addInventory().create(this, syncID);
+			.blockEntity(this).slot(0, 100, 53).outputSlot(1, 140, 53)
+			.sync(this::getLockedInt, this::setLockedInt).addInventory().create(this, syncID);
 	}
 
 	@Override

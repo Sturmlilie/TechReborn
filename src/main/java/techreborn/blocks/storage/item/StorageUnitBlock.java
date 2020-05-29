@@ -64,7 +64,7 @@ public class StorageUnitBlock extends BlockMachineBase {
 		ItemStack stackInHand = playerIn.getStackInHand(Hand.MAIN_HAND);
 
 		if (storageEntity != null && storageEntity.isSameType(stackInHand)) {
-
+System.out.printf("+++ SUB: adding same item, returning early\n");
 			// Add item which is the same type (in users inventory) into storage
 			for (int i = 0; i < playerIn.inventory.getInvSize() && !storageEntity.isFull(); i++) {
 				ItemStack curStack = playerIn.inventory.getInvStack(i);

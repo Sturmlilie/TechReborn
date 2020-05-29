@@ -43,6 +43,7 @@ import techreborn.blockentity.machine.tier1.AutoCraftingTableBlockEntity;
 import techreborn.blockentity.machine.tier1.RollingMachineBlockEntity;
 import techreborn.blockentity.machine.tier3.ChunkLoaderBlockEntity;
 import techreborn.blockentity.storage.energy.AdjustableSUBlockEntity;
+import techreborn.blockentity.storage.item.StorageUnitBaseBlockEntity;
 import techreborn.config.TechRebornConfig;
 import techreborn.init.TRContent;
 
@@ -53,11 +54,12 @@ public class ServerboundPackets {
 	public static final Identifier AESU = new Identifier(TechReborn.MOD_ID, "aesu");
 	public static final Identifier AUTO_CRAFTING_LOCK = new Identifier(TechReborn.MOD_ID, "auto_crafting_lock");
 	public static final Identifier ROLLING_MACHINE_LOCK = new Identifier(TechReborn.MOD_ID, "rolling_machine_lock");
+	public static final Identifier STORAGE_UNIT_LOCK = new Identifier(TechReborn.MOD_ID, "storage_unit_lock");
 	public static final Identifier FUSION_CONTROL_SIZE = new Identifier(TechReborn.MOD_ID, "fusion_control_size");
 	public static final Identifier REFUND = new Identifier(TechReborn.MOD_ID, "refund");
 	public static final Identifier CHUNKLOADER = new Identifier(TechReborn.MOD_ID, "chunkloader");
 	public static final Identifier EXPERIENCE = new Identifier(TechReborn.MOD_ID, "experience");
-	
+
 	public static void init() {
 		registerPacketHandler(AESU, (extendedPacketBuffer, context) -> {
 			BlockPos pos = extendedPacketBuffer.readBlockPos();
@@ -109,6 +111,18 @@ public class ServerboundPackets {
 			});
 		});
 
+		registerPacketHandler(STORAGE_UNIT_LOCK, (extendedPacketBuffer, context) -> {
+			BlockPos machinePos = extendedPacketBuffer.readBlockPos();
+			boolean locked = extendedPacketBuffer.readBoolean();
+
+			context.getTaskQueue().execute(() -> {
+				BlockEntity BlockEntity = context.getPlayer().world.getBlockEntity(machinePos);
+				if (BlockEntity instanceof StorageUnitBaseBlockEntity) {
+					((StorageUnitBaseBlockEntity) BlockEntity).setLocked(locked);
+				}
+			});
+		});
+
 		registerPacketHandler(REFUND, (extendedPacketBuffer, context) -> {
 			if(!TechRebornConfig.allowManualRefund){
 				return;
@@ -127,12 +141,12 @@ public class ServerboundPackets {
 			});
 
 		});
-		
+
 		registerPacketHandler(CHUNKLOADER, (extendedPacketBuffer, context) -> {
 			BlockPos pos = extendedPacketBuffer.readBlockPos();
 			int buttonID = extendedPacketBuffer.readInt();
 			boolean sync = extendedPacketBuffer.readBoolean();
-			
+
 			context.getTaskQueue().execute(() -> {
 				BlockEntity blockEntity = context.getPlayer().world.getBlockEntity(pos);
 				if (blockEntity instanceof ChunkLoaderBlockEntity) {
@@ -140,10 +154,10 @@ public class ServerboundPackets {
 				}
 			});
 		});
-		
+
 		registerPacketHandler(EXPERIENCE, (extendedPacketBuffer, context) -> {
 			BlockPos pos = extendedPacketBuffer.readBlockPos();
-			
+
 			context.getTaskQueue().execute(() -> {
 				BlockEntity blockEntity = context.getPlayer().world.getBlockEntity(pos);
 				if (blockEntity instanceof IronFurnaceBlockEntity) {
@@ -188,12 +202,19 @@ public class ServerboundPackets {
 		});
 	}
 
+	public static Packet<ServerPlayPacketListener> createPacketStorageUnitLock(StorageUnitBaseBlockEntity machine, boolean locked) {
+		return NetworkManager.createServerBoundPacket(STORAGE_UNIT_LOCK, extendedPacketBuffer -> {
+			extendedPacketBuffer.writeBlockPos(machine.getPos());
+			extendedPacketBuffer.writeBoolean(locked);
+		});
+	}
+
 	public static Packet<ServerPlayPacketListener> createRefundPacket(){
 		return NetworkManager.createServerBoundPacket(REFUND, extendedPacketBuffer -> {
 
 		});
 	}
-	
+
 	public static Packet<ServerPlayPacketListener> createPacketChunkloader(int buttonID, ChunkLoaderBlockEntity blockEntity, boolean sync) {
 		return NetworkManager.createServerBoundPacket(CHUNKLOADER, extendedPacketBuffer -> {
 			extendedPacketBuffer.writeBlockPos(blockEntity.getPos());
@@ -201,7 +222,7 @@ public class ServerboundPackets {
 			extendedPacketBuffer.writeBoolean(sync);
 		});
 	}
-	
+
 	public static Packet<ServerPlayPacketListener> createPacketExperience(IronFurnaceBlockEntity blockEntity) {
 		return NetworkManager.createServerBoundPacket(EXPERIENCE, extendedPacketBuffer -> {
 			extendedPacketBuffer.writeBlockPos(blockEntity.getPos());
