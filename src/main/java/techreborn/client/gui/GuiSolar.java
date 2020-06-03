@@ -30,6 +30,8 @@ import reborncore.client.gui.builder.GuiBase;
 import reborncore.common.util.StringUtils;
 import techreborn.blockentity.generator.SolarPanelBlockEntity;
 
+import java.lang.Math;
+
 public class GuiSolar extends GuiBase<BuiltContainer> {
 
 	SolarPanelBlockEntity blockEntity;
@@ -51,10 +53,13 @@ public class GuiSolar extends GuiBase<BuiltContainer> {
 		final GuiBase.Layer layer = GuiBase.Layer.FOREGROUND;
 
 		builder.drawMultiEnergyBar(this, 156, 19, (int) blockEntity.getEnergy(), (int) blockEntity.getMaxPower(), mouseX, mouseY, 0, layer);
+		String angleStr = "--";
 
 		switch (blockEntity.getSunState()) {
 			case SolarPanelBlockEntity.DAYGEN:
 				builder.drawString(this, StringUtils.t("techreborn.message.daygen"), 10, 20, 15129632);
+				// Round here as well, so "90°" is visible at least for a short while
+				angleStr = String.valueOf((int) Math.round(blockEntity.incidenceAngle * 90)) + "°";
 				break;
 			case SolarPanelBlockEntity.NIGHTGEN:
 				builder.drawString(this, StringUtils.t("techreborn.message.nightgen"), 10, 20, 7566195);
@@ -64,7 +69,8 @@ public class GuiSolar extends GuiBase<BuiltContainer> {
 				break;
 		}
 
-		builder.drawString(this, "Generating: " + blockEntity.getGenerationRate() + " E/t", 10, 30, 0);
+		builder.drawString(this, "Incidence angle: " + angleStr, 10, 30, 0);
+		builder.drawString(this, "Generating: " + blockEntity.getGenerationRate() + " E/t", 10, 40, 0);
 
 	}
 }

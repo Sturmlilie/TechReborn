@@ -46,10 +46,52 @@ import techreborn.init.TRBlockEntities;
 import techreborn.init.TRContent;
 import techreborn.init.TRContent.SolarPanels;
 
+import java.lang.Math;
 import java.util.List;
 
 public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements IToolDrop, IContainerProvider {
+private String lgp() {
+		if (this.world == null) {
+			return "[N] ";
+		}
 
+		if (this.world.isClient) {
+			return "[C] ";
+		} else {
+			return "[S] ";
+		}
+	}
+
+	private boolean isServer() {
+		if (this.world == null) {
+			return false;
+		}
+		return !this.world.isClient;
+	}
+
+	private int objId(Object obj) {
+		if (obj == null) {
+			return 0;
+		} else {
+			return obj.hashCode();
+		}
+	}
+
+	// returns normalized incidence angle,
+	// where 0.0 =^= 0° (no incidence) and 1.0 =^= 90° (full incidence)
+	private double skyToIncidenceAngle(double skyAngle) {
+		//~ final double quarterCircle = Math.PI / 2;
+		final double quarterCircle = 90;
+		if (skyAngle <= 0.25) {
+			// noon to evening
+			return 1.0 - skyAngle * 4;
+		} else if (skyAngle >= 0.75) {
+			// morning to noon
+			return (skyAngle - 0.75) * 4;
+		}
+
+		return 0;
+	}
 
 	//	State ZEROGEN: No exposure to sun
 	//	State NIGHTGEN: Has direct exposure to sun
@@ -60,6 +102,11 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 
 	private int state = ZEROGEN;
 	private int prevState = ZEROGEN;
+
+	public double incidenceAngle = 0;
+	private int generationRateD = 0;
+	private int updateCounter = 0;
+	public int getUpdateCounter(){return updateCounter;}public void setUpdateCounter(int v){updateCounter=v;}
 
 	private SolarPanels panel;
 
@@ -82,6 +129,10 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 
 	// Setters and getters for the GUI to sync
 	private void setSunState(int state) {
+		if (this.state != DAYGEN && state == DAYGEN) {
+			//~ System.out.printf(lgp()+"+++ [%X] transition to DAYGEN at %d\n", objId(this), world
+		}
+
 		this.state = state;
 	}
 
@@ -96,10 +147,25 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 		return panel;
 	}
 
+	private void updateSunlightIncidence() {
+		if (this.getSunState() == DAYGEN) {
+			incidenceAngle = skyToIncidenceAngle(world.getSkyAngle(0));
+			final double incidenceFactor = Math.sin((Math.PI/2)*incidenceAngle);
+			final int generation = (int) Math.round(getPanel().generationRateD * incidenceFactor);
+			generationRateD = Math.max(generation, getPanel().generationRateN);
+			++updateCounter;
+		} else {
+			incidenceAngle = 0;
+			generationRateD = getPanel().generationRateN;
+		}
+	}
+
 	private void updateState() {
 		if (world == null) {
 			return;
 		}
+		System.out.printf(lgp()+"+++ [%X] sky angle: %f | sun angle: %f\n",
+		objId(this), this.world.getSkyAngle(0), skyToIncidenceAngle(this.world.getSkyAngle(0)));
 		if (world.isSkyVisible(pos.up())) {
 			this.setSunState(NIGHTGEN);
 
@@ -121,6 +187,8 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 
 			prevState = this.getSunState();
 		}
+
+		this.updateSunlightIncidence();
 	}
 
 	public int getGenerationRate() {
@@ -128,12 +196,16 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 
 		switch (getSunState()) {
 			case DAYGEN:
-				rate = getPanel().generationRateD;
+				if (this.world != null && this.world.isClient) {
+					this.updateSunlightIncidence();
+				}
+
+				rate = generationRateD;
 				break;
 			case NIGHTGEN:
 				rate = getPanel().generationRateN;
 		}
-
+//~ System.out.printf(lgp()+"+++ [%X]#getGenerationRate() -> %d\n", objId(this), rate);
 		return rate;
 	}
 
@@ -262,6 +334,7 @@ public class SolarPanelBlockEntity extends PowerAcceptorBlockEntity implements I
 		return new ContainerBuilder("solar_panel").player(player.inventory).inventory().hotbar().addInventory()
 				.blockEntity(this).syncEnergyValue()
 				.sync(this::getSunState, this::setSunState)
+				.sync(this::getUpdateCounter, this::setUpdateCounter)
 				.addInventory().create(this, syncID);
 	}
 }
