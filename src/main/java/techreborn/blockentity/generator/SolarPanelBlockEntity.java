@@ -196,7 +196,7 @@ private String lgp() {
 
 		switch (getSunState()) {
 			case DAYGEN:
-				if (this.world != null && this.world.isClient) {
+				if (!isServer()) {
 					this.updateSunlightIncidence();
 				}
 
